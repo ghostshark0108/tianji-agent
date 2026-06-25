@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, User, Bot, Calendar, Clock } from "lucide-react";
+import { Send, User, Bot, Calendar } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -15,6 +15,7 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streaming, setStreaming] = useState(false);
   const [step, setStep] = useState<"birth" | "chat">("birth");
   const [birthInfo, setBirthInfo] = useState({
     year: "",
@@ -24,6 +25,11 @@ export default function ChatPage() {
     minute: "",
     gender: "",
   });
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const handleBirthSubmit = async () => {
     if (!birthInfo.year || !birthInfo.month || !birthInfo.day || !birthInfo.gender) {
@@ -53,16 +59,22 @@ export default function ChatPage() {
       ]);
     } finally {
       setLoading(false);
+      setTimeout(scrollToBottom, 100);
     }
   };
 
   const handleChatSubmit = async () => {
-    if (!input.trim() || loading) return;
+    if (!input.trim() || loading || streaming) return;
 
     const userMsg = input.trim();
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
+    const newMessages = [...messages, { role: "user" as const, content: userMsg }];
+    setMessages(newMessages);
     setLoading(true);
+    setStreaming(true);
+
+    // 添加一个空的assistant消息，用于流式填充
+    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
     try {
       const res = await fetch("/api/chat", {
@@ -74,18 +86,61 @@ export default function ChatPage() {
           birthInfo,
         }),
       });
-      const data = await res.json();
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: data.reply || data.error || "分析失败" },
-      ]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "assistant", content: "网络错误，请重试" },
-      ]);
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No reader");
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const json = JSON.parse(data);
+            if (json.content) {
+              setMessages((prev) => {
+                const updated = [...prev];
+                const last = updated[updated.length - 1];
+                if (last && last.role === "assistant") {
+                  last.content += json.content;
+                }
+                return [...updated];
+              });
+            }
+          } catch {
+            // skip
+          }
+        }
+      }
+    } catch (err) {
+      setMessages((prev) => {
+        const updated = [...prev];
+        const last = updated[updated.length - 1];
+        if (last && last.role === "assistant") {
+          last.content = "网络错误，请重试";
+        }
+        return [...updated];
+      });
     } finally {
       setLoading(false);
+      setStreaming(false);
+      setTimeout(scrollToBottom, 100);
     }
   };
 
@@ -95,7 +150,7 @@ export default function ChatPage() {
       <header className="border-b border-white/10 px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <a href="/" className="text-[#d4a574] font-bold text-lg">
-            天机 Agent
+            天机
           </a>
           <span className="text-white/40 text-sm">命理推演引擎</span>
         </div>
@@ -114,7 +169,7 @@ export default function ChatPage() {
                 <Calendar className="w-8 h-8 text-[#d4a574]" />
               </div>
               <h2 className="text-2xl font-bold text-white mb-3">
-                欢迎来到天机 Agent
+                欢迎来到天机
               </h2>
               <p className="text-white/50 mb-8">
                 请输入你的出生信息，开始命理推演
@@ -174,32 +229,24 @@ export default function ChatPage() {
 
                 <div className="flex gap-3">
                   <Button
-                    variant={
-                      birthInfo.gender === "男" ? "default" : "outline"
-                    }
+                    variant={birthInfo.gender === "男" ? "default" : "outline"}
                     className={`flex-1 ${
                       birthInfo.gender === "男"
                         ? "bg-[#d4a574] text-[#0a0a0f]"
                         : "border-white/10 text-white/70 hover:bg-white/5"
                     }`}
-                    onClick={() =>
-                      setBirthInfo({ ...birthInfo, gender: "男" })
-                    }
+                    onClick={() => setBirthInfo({ ...birthInfo, gender: "男" })}
                   >
                     男
                   </Button>
                   <Button
-                    variant={
-                      birthInfo.gender === "女" ? "default" : "outline"
-                    }
+                    variant={birthInfo.gender === "女" ? "default" : "outline"}
                     className={`flex-1 ${
                       birthInfo.gender === "女"
                         ? "bg-[#d4a574] text-[#0a0a0f]"
                         : "border-white/10 text-white/70 hover:bg-white/5"
                     }`}
-                    onClick={() =>
-                      setBirthInfo({ ...birthInfo, gender: "女" })
-                    }
+                    onClick={() => setBirthInfo({ ...birthInfo, gender: "女" })}
                   >
                     女
                   </Button>
@@ -241,6 +288,9 @@ export default function ChatPage() {
                 >
                   <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed">
                     {msg.content}
+                    {streaming && i === messages.length - 1 && msg.role === "assistant" && (
+                      <span className="inline-block w-2 h-4 bg-[#d4a574] ml-1 animate-pulse" />
+                    )}
                   </pre>
                 </div>
                 {msg.role === "user" && (
@@ -252,7 +302,7 @@ export default function ChatPage() {
             ))}
           </AnimatePresence>
 
-          {loading && (
+          {loading && !streaming && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -270,6 +320,7 @@ export default function ChatPage() {
               </div>
             </motion.div>
           )}
+          <div ref={messagesEndRef} />
         </div>
       </div>
 
@@ -284,13 +335,14 @@ export default function ChatPage() {
             <Input
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleChatSubmit()}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleChatSubmit()}
               placeholder="输入你的问题..."
               className="bg-white/5 border-white/10 text-white placeholder:text-white/30 py-6"
+              disabled={streaming}
             />
             <Button
               onClick={handleChatSubmit}
-              disabled={loading || !input.trim()}
+              disabled={loading || streaming || !input.trim()}
               className="bg-[#d4a574] text-[#0a0a0f] hover:bg-[#e8c9a0] px-6"
             >
               <Send className="w-4 h-4" />
