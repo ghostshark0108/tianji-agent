@@ -8,6 +8,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "请输入问题" }, { status: 400 });
     }
 
+    // 从环境变量读取API配置
+    const apiBase = process.env.AI_API_BASE || "http://127.0.0.1:15721/v1";
+    const apiKey = process.env.AI_API_KEY || "***";
+    const model = process.env.AI_MODEL || "mimo-v2.5-pro";
+
     // 构建消息历史
     const messages = [
       {
@@ -37,15 +42,15 @@ ${birthInfo ? `出生：${birthInfo.year}年${birthInfo.month}月${birthInfo.day
       { role: "user", content: message },
     ];
 
-    // 调用CC Switch代理（流式输出）
-    const response = await fetch("http://127.0.0.1:15721/v1/chat/completions", {
+    // 调用AI API（流式输出）
+    const response = await fetch(`${apiBase}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer ***",
+        "Authorization": `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "mimo-v2.5-pro",
+        model,
         messages,
         temperature: 0.7,
         max_tokens: 4096,
