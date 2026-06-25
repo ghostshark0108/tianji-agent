@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import path from "path";
+import { getBaziChart } from "shunshi-bazi-core";
 
-const execAsync = promisify(exec);
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyObj = Record<string, any>;
 
 export async function POST(req: Request) {
   try {
@@ -13,61 +12,51 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "请填写完整的出生信息" }, { status: 400 });
     }
 
-    const h = hour || "12";
-    const m = minute || "0";
-    const g = gender === "男" ? "1" : "0";
+    const h = hour ? parseInt(hour) : 12;
+    const m = minute ? parseInt(minute) : 0;
+    const g = gender === "男" ? 1 : 0;
 
-    // 使用文件方式执行Python脚本（使用Hermes venv的Python）
-    const scriptPath = path.join(process.cwd(), "scripts", "bazi_calc.py");
-    const pythonPath = "C:/Users/K1/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe";
-    const { stdout, stderr } = await execAsync(
-      `"${pythonPath}" "${scriptPath}" ${year} ${month} ${day} ${h} ${m} ${g}`,
-      { timeout: 15000 }
-    );
+    const chart = getBaziChart({
+      year: parseInt(year),
+      month: parseInt(month),
+      day: parseInt(day),
+      hour: h,
+      minute: m,
+      gender: g,
+    }) as unknown as AnyObj;
 
-    if (stderr) {
-      console.error("排盘错误:", stderr);
-    }
-
-    const baziData = JSON.parse(stdout.trim());
+    const bazi = chart.八字 as AnyObj;
+    const p = bazi.柱位详细 as AnyObj;
+    const dayun = (bazi.大运 || []) as AnyObj[];
+    const wuxing = bazi.五行分值 as AnyObj;
 
     // 生成报告
-    const report = generateReport(baziData);
+    const report = `【八字排盘结果】
 
-    return NextResponse.json({ report, data: baziData });
-  } catch (error: unknown) {
-    console.error("排盘失败:", error);
-    const errorMessage = error instanceof Error ? error.message : "排盘失败";
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
-  }
-}
-
-function generateReport(data: Record<string, unknown>) {
-  const pillars = data.pillars as Record<string, { gan: string; zhi: string; nayin: string }>;
-  const shishen = data.shishen as Record<string, string>;
-  const dayun = data.dayun as Array<{ start_age: number; end_age: number; ganzhi: string }>;
-
-  return `【八字排盘结果】
-
-阳历：${data.solar}
-农历：${data.lunar}
-生肖：${data.shengxiao}
+阳历：${bazi.公历}
+农历：${bazi.农历}
+生肖：${bazi.生肖}
+日主：${bazi.日主}
+起运：${bazi.起运}
 
 ━━━━━━━━━━━━━━━━━━━━
       年柱    月柱    日柱    时柱
-天干：  ${pillars.year.gan}      ${pillars.month.gan}      ${pillars.day.gan}      ${pillars.time.gan}
-地支：  ${pillars.year.zhi}      ${pillars.month.zhi}      ${pillars.day.zhi}      ${pillars.time.zhi}
-纳音：${pillars.year.nayin}  ${pillars.month.nayin}  ${pillars.day.nayin}  ${pillars.time.nayin}
+天干：  ${p.年柱.天干}      ${p.月柱.天干}      ${p.日柱.天干}      ${p.时柱.天干}
+地支：  ${p.年柱.地支}      ${p.月柱.地支}      ${p.日柱.地支}      ${p.时柱.地支}
+纳音：${p.年柱.纳音}  ${p.月柱.纳音}  ${p.日柱.纳音}  ${p.时柱.纳音}
 ━━━━━━━━━━━━━━━━━━━━
 
 【十神关系】
-年干 ${pillars.year.gan} → ${shishen.year_gan}
-月干 ${pillars.month.gan} → ${shishen.month_gan}
-日干 ${pillars.day.gan} → 日主
-时干 ${pillars.time.gan} → ${shishen.time_gan}
+年干 ${p.年柱.天干} → ${p.年柱.主星}
+月干 ${p.月柱.天干} → ${p.月柱.主星}
+日干 ${p.日柱.天干} → 日主
+时干 ${p.时柱.天干} → ${p.时柱.主星}
+
+【五行力量】
+金：${wuxing.金?.占比 || "-"}  木：${wuxing.木?.占比 || "-"}  水：${wuxing.水?.占比 || "-"}  火：${wuxing.火?.占比 || "-"}  土：${wuxing.土?.占比 || "-"}
 
 【大运走势】
-${dayun.map((d) => `${d.start_age}-${d.end_age}岁：${d.ganzhi}`).join("\n")}
+${dayun.map((d) => `${d.起始年龄}-${d.结束年龄}岁：${d.干支}（${d.主星}）`).join("\n")}
 
 ━━━━━━━━━━━━━━━━━━━━
 
@@ -76,4 +65,34 @@ ${dayun.map((d) => `${d.start_age}-${d.end_age}岁：${d.ganzhi}`).join("\n")}
 • 今年运势如何？
 • 适合什么职业？
 • 感情方面怎么样？`;
+
+    return NextResponse.json({
+      report,
+      data: {
+        solar: bazi.公历,
+        lunar: bazi.农历,
+        shengxiao: bazi.生肖,
+        rizhu: bazi.日主,
+        sizhu: bazi.四柱,
+        qiyun: bazi.起运,
+        pillars: {
+          year: { gan: p.年柱.天干, zhi: p.年柱.地支, nayin: p.年柱.纳音, zhuxing: p.年柱.主星 },
+          month: { gan: p.月柱.天干, zhi: p.月柱.地支, nayin: p.月柱.纳音, zhuxing: p.月柱.主星 },
+          day: { gan: p.日柱.天干, zhi: p.日柱.地支, nayin: p.日柱.纳音 },
+          time: { gan: p.时柱.天干, zhi: p.时柱.地支, nayin: p.时柱.纳音, zhuxing: p.时柱.主星 },
+        },
+        wuxing,
+        dayun: dayun.map((d) => ({
+          start_age: d.起始年龄,
+          end_age: d.结束年龄,
+          ganzhi: d.干支,
+          zhuxing: d.主星,
+        })),
+      },
+    });
+  } catch (error: unknown) {
+    console.error("排盘失败:", error);
+    const errorMessage = error instanceof Error ? error.message : "排盘失败";
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
 }
