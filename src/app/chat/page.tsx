@@ -4,7 +4,9 @@ import { useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Send, User, Bot, Calendar } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import Pricing from "@/components/Pricing";
+import { Send, User, Bot, Calendar, Crown } from "lucide-react";
 
 interface Message {
   role: "user" | "assistant";
@@ -12,11 +14,13 @@ interface Message {
 }
 
 export default function ChatPage() {
+  const { email, credits, openLogin } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [streaming, setStreaming] = useState(false);
   const [step, setStep] = useState<"birth" | "chat">("birth");
+  const [showPricing, setShowPricing] = useState(false);
   const [birthInfo, setBirthInfo] = useState({
     year: "",
     month: "",
@@ -65,6 +69,18 @@ export default function ChatPage() {
 
   const handleChatSubmit = async () => {
     if (!input.trim() || loading || streaming) return;
+
+    // 未登录 → 弹登录框
+    if (!email) {
+      openLogin();
+      return;
+    }
+
+    // 没credits → 提示购买
+    if (credits <= 0) {
+      setShowPricing(true);
+      return;
+    }
 
     const userMsg = input.trim();
     setInput("");
@@ -336,7 +352,7 @@ export default function ChatPage() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleChatSubmit()}
-              placeholder="输入你的问题..."
+              placeholder={email ? "输入你的问题..." : "登录后即可深度对话..."}
               className="bg-white/5 border-white/10 text-white placeholder:text-white/30 py-6"
               disabled={streaming}
             />
@@ -348,8 +364,51 @@ export default function ChatPage() {
               <Send className="w-4 h-4" />
             </Button>
           </div>
+          {!email && (
+            <p className="text-center text-xs text-white/30 mt-2">
+              游客可免费排盘，<button onClick={openLogin} className="text-[#d4a574] hover:underline">登录</button>后解锁AI深度分析
+            </p>
+          )}
+          {email && credits <= 0 && (
+            <p className="text-center text-xs text-white/30 mt-2">
+              <button onClick={() => setShowPricing(true)} className="text-[#d4a574] hover:underline flex items-center gap-1 mx-auto">
+                <Crown className="w-3 h-3" />
+                购买套餐解锁AI分析
+              </button>
+            </p>
+          )}
         </motion.div>
       )}
+
+      {/* 定价弹层 */}
+      <AnimatePresence>
+        {showPricing && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[90] flex items-center justify-center p-4 overflow-y-auto"
+            onClick={() => setShowPricing(false)}
+          >
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative w-full max-w-3xl py-8"
+            >
+              <button
+                onClick={() => setShowPricing(false)}
+                className="absolute top-2 right-2 text-white/40 hover:text-white z-10"
+              >
+                ✕
+              </button>
+              <Pricing />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

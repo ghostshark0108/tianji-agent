@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogOut, Crown } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/contexts/AuthContext";
 
 const navLinks = [
   { label: "功能介绍", href: "#capabilities" },
@@ -13,6 +14,7 @@ const navLinks = [
 export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { email, credits, loading, openLogin, logout } = useAuth();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20);
@@ -55,14 +57,37 @@ export default function Navbar() {
           ))}
         </div>
 
-        {/* Login button */}
-        <div className="hidden md:block">
-          <Button
-            variant="outline"
-            className="border-[#d4a574]/30 text-[#d4a574] hover:bg-[#d4a574]/10 hover:text-[#e8c9a0] hover:border-[#d4a574]/50 transition-all duration-200"
-          >
-            登录
-          </Button>
+        {/* Login / User */}
+        <div className="hidden md:flex items-center gap-3">
+          {!loading &&
+            (email ? (
+              <>
+                <a
+                  href="/pricing"
+                  className="flex items-center gap-1.5 text-sm text-white/50 hover:text-[#d4a574] transition-colors"
+                >
+                  <Crown className="w-3.5 h-3.5" />
+                  {credits > 0 ? `${credits}次` : "购买"}
+                </a>
+                <span className="text-sm text-white/30">{email}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={logout}
+                  className="text-white/40 hover:text-white/70"
+                >
+                  <LogOut className="w-4 h-4" />
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="outline"
+                onClick={openLogin}
+                className="border-[#d4a574]/30 text-[#d4a574] hover:bg-[#d4a574]/10 hover:text-[#e8c9a0] hover:border-[#d4a574]/50 transition-all duration-200"
+              >
+                登录
+              </Button>
+            ))}
         </div>
 
         {/* Mobile menu button */}
@@ -92,12 +117,34 @@ export default function Navbar() {
                 {link.label}
               </a>
             ))}
-            <Button
-              variant="outline"
-              className="border-[#d4a574]/30 text-[#d4a574] hover:bg-[#d4a574]/10 w-full mt-2"
-            >
-              登录
-            </Button>
+            {!loading &&
+              (email ? (
+                <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                  <span className="text-sm text-white/50">{email}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      logout();
+                      setMobileOpen(false);
+                    }}
+                    className="text-white/40"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    openLogin();
+                    setMobileOpen(false);
+                  }}
+                  className="border-[#d4a574]/30 text-[#d4a574] hover:bg-[#d4a574]/10 w-full mt-2"
+                >
+                  登录
+                </Button>
+              ))}
           </div>
         </motion.div>
       )}
